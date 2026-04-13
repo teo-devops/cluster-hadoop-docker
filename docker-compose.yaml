@@ -1,0 +1,107 @@
+services:
+
+  # ─── HDFS ──────────────────────────────────────────────────────────────────
+
+  namenode:
+    image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
+    container_name: namenode
+    restart: always
+    ports:
+      - "9870:9870"   # HDFS Web UI
+      - "9000:9000"   # HDFS RPC
+    volumes:
+      - hadoop_namenode:/hadoop-docker/dfs/name
+      - ./dataset:/home/training/training_materials/developer/data
+      - ./lib:/home/training/lib
+    environment:
+      - CLUSTER_NAME=hadoop-lab
+    env_file:
+      - ./hadoop.env
+
+  datanode:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: datanode
+    restart: always
+    volumes:
+      - hadoop_datanode:/hadoop-docker/dfs/data
+    env_file:
+      - ./hadoop.env
+    depends_on:
+      - namenode
+
+  # ─── YARN ──────────────────────────────────────────────────────────────────
+
+  resourcemanager:
+    image: bde2020/hadoop-resourcemanager:2.0.0-hadoop3.2.1-java8
+    container_name: resourcemanager
+    restart: always
+    ports:
+      - "8088:8088"
+    env_file:
+      - ./hadoop.env
+    depends_on:
+      - namenode
+      - datanode
+
+  nodemanager:
+    image: bde2020/hadoop-nodemanager:2.0.0-hadoop3.2.1-java8
+    container_name: nodemanager
+    restart: always
+    env_file:
+      - ./hadoop.env
+    depends_on:
+      - resourcemanager
+
+  # ─── Hive ──────────────────────────────────────────────────────────────────
+
+  hive-metastore-db:
+    image: bde2020/hive-metastore-postgresql:2.3.0
+    container_name: hive-metastore-db
+    restart: always
+
+  hive-metastore:
+    image: bde2020/hive:2.3.2-postgresql-metastore
+    container_name: hive-metastore
+    restart: always
+    command: /opt/hive/bin/hive --service metastore
+    environment:
+      - SERVICE_PRECONDITION=namenode:9870 datanode:9864 resourcemanager:8088 hive-metastore-db:5432
+    ports:
+      - "9083:9083"
+    env_file:
+      - ./hadoop.env
+    depends_on:
+      - hive-metastore-db
+
+  hive-server:
+    image: bde2020/hive:2.3.2-postgresql-metastore
+    container_name: hive-server
+    restart: always
+    environment:
+      - HIVE_CORE_CONF_fs_defaultFS=hdfs://namenode:9000
+      - SERVICE_PRECONDITION=namenode:9870 datanode:9864 resourcemanager:8088 hive-metastore:9083
+    ports:
+      - "10000:10000"
+    env_file:
+      - ./hadoop.env
+    depends_on:
+      - hive-metastore
+
+  # ─── Hue (Web UI) ──────────────────────────────────────────────────────────
+
+  hue:
+    image: gethue/hue:4.10.0
+    container_name: hue
+    restart: always
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./config/hue.ini:/usr/share/hue/desktop/conf/hue.ini
+    depends_on:
+      - namenode
+      - resourcemanager
+      - hive-server
+
+volumes:
+  hadoop_namenode:
+  hadoop_datanode:
